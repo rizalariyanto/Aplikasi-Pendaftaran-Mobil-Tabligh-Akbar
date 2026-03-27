@@ -1,0 +1,225 @@
+import React, { useState, useMemo } from 'react';
+import { 
+  Car, 
+  Users, 
+  UserPlus, 
+  CheckCircle2, 
+  AlertCircle, 
+  Search, 
+  MapPin, 
+  Calendar,
+  ChevronRight,
+  Plus,
+  X
+} from 'lucide-react';
+
+const INITIAL_CARS = [
+  { id: 1, name: "Mobil Kijang Biru", status: "Available", passengers: ["Mas Amin", "Agus Dg Bunga", "Uztad Syamsuddin", "Abd Azis Dg Tunru", "Uztad Ali", "Uztad Sigollo", "Mukhtar Nyampa", "Uztad Dg Tola"] },
+  { id: 2, name: "Mobil Avanza Hitam", status: "Available", passengers: ["Rahman Dg Ngemba", "Haeruddin D' Nai", "Abd. Haris Dg Lau'", "Rustam D' Kalu'", "Ramli Dg Nojeng"] },
+  { id: 3, name: "Mobil Mega Carry (KKI Ibrahim Bin Adam)", status: "Full", passengers: ["Rombongan KKI IBRAHIM BIN ADAM"] },
+  { id: 4, name: "Mobil Spander", status: "Available", passengers: ["Ust Komari"] },
+  { id: 5, name: "Mobil Ust. Ulla", status: "Full", passengers: ["Rombongan Ust. Ulla"] },
+  { id: 6, name: "Mobil Jafar Emba", status: "Full", passengers: ["Rombongan Jafar Emba"] },
+  { id: 7, name: "Mobil Muhajirin Ardan", status: "Full", passengers: ["Rombongan Muhajirin Ardan"] },
+  { id: 8, name: "Mobil Wiz", status: "Full", passengers: ["Rombongan Wiz"] },
+  { id: 9, name: "Mobil Xenia Situru", status: "Available", passengers: ["Ust Situru", "Dg Ngasih", "Andi Tajuddin", "Harpina", "Arsyad Itung", "Dg Ngugi"] },
+  { id: 10, name: "Mobil Wuling Cortez (KKI Amru Bin Dinar 2)", status: "Full", passengers: ["Rombongan KKI AMRU BIN DINAR 2"] },
+  { id: 11, name: "Mobil Avanza (Rahman Emba)", status: "Full", passengers: ["Rahman Emba", "Syahruni", "Haris Dg Lau", "Tati", "Rustam Dg Kalu", "Haeruddin Dg Nai", "Ramli Dg Nojeng"] },
+];
+
+export default function App() {
+  const [cars, setCars] = useState(INITIAL_CARS);
+  const [searchTerm, setSearchTerm] = useState("");
+  const [isAddingPassenger, setIsAddingPassenger] = useState(null);
+  const [newPassengerName, setNewPassengerName] = useState("");
+
+  // Statistics
+  const stats = useMemo(() => {
+    const totalPassengers = cars.reduce((acc, car) => acc + car.passengers.length, 0);
+    const fullCars = cars.filter(car => car.status === "Full").length;
+    return { totalPassengers, fullCars, totalCars: cars.length };
+  }, [cars]);
+
+  // Filter Logic
+  const filteredCars = cars.filter(car => 
+    car.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+    car.passengers.some(p => p.toLowerCase().includes(searchTerm.toLowerCase()))
+  );
+
+  const toggleStatus = (id) => {
+    setCars(prev => prev.map(car => 
+      car.id === id ? { ...car, status: car.status === "Full" ? "Available" : "Full" } : car
+    ));
+  };
+
+  const addPassenger = (carId) => {
+    if (!newPassengerName.trim()) return;
+    setCars(prev => prev.map(car => 
+      car.id === carId ? { ...car, passengers: [...car.passengers, newPassengerName.trim()] } : car
+    ));
+    setNewPassengerName("");
+    setIsAddingPassenger(null);
+  };
+
+  const removePassenger = (carId, index) => {
+    setCars(prev => prev.map(car => 
+      car.id === carId ? { ...car, passengers: car.passengers.filter((_, i) => i !== index) } : car
+    ));
+  };
+
+  return (
+    <div className="min-h-screen bg-slate-50 text-slate-900 font-sans pb-20">
+      {/* Header Section */}
+      <header className="bg-emerald-700 text-white pt-8 pb-12 px-4 shadow-lg sticky top-0 z-10">
+        <div className="max-w-4xl mx-auto">
+          <div className="flex justify-between items-start mb-6">
+            <div>
+              <h1 className="text-2xl md:text-3xl font-bold mb-1">Tabligh Akbar Nasional</h1>
+              <p className="opacity-90 flex items-center gap-2 text-sm md:text-base">
+                <MapPin size={16} /> Tujuan: Bulukumba
+              </p>
+            </div>
+            <div className="text-right">
+              <p className="font-semibold flex items-center justify-end gap-2 text-sm md:text-base">
+                <Calendar size={16} /> 16 Syawal 1447 H
+              </p>
+              <p className="text-xs md:text-sm opacity-80">5 April 2026 M</p>
+            </div>
+          </div>
+
+          {/* Stats Cards */}
+          <div className="grid grid-cols-3 gap-3">
+            <div className="bg-white/10 backdrop-blur-md rounded-xl p-3 border border-white/20">
+              <p className="text-xs uppercase tracking-wider opacity-80">Total Mobil</p>
+              <p className="text-xl font-bold">{stats.totalCars}</p>
+            </div>
+            <div className="bg-white/10 backdrop-blur-md rounded-xl p-3 border border-white/20">
+              <p className="text-xs uppercase tracking-wider opacity-80">Penumpang</p>
+              <p className="text-xl font-bold">{stats.totalPassengers}</p>
+            </div>
+            <div className="bg-white/10 backdrop-blur-md rounded-xl p-3 border border-white/20">
+              <p className="text-xs uppercase tracking-wider opacity-80">Mobil Penuh</p>
+              <p className="text-xl font-bold">{stats.fullCars}</p>
+            </div>
+          </div>
+        </div>
+      </header>
+
+      {/* Main Content */}
+      <main className="max-w-4xl mx-auto px-4 -mt-6">
+        {/* Search Bar */}
+        <div className="relative mb-6">
+          <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" size={20} />
+          <input 
+            type="text" 
+            placeholder="Cari nama mobil atau penumpang..."
+            className="w-full pl-12 pr-4 py-4 rounded-2xl border-none shadow-xl focus:ring-2 focus:ring-emerald-500 transition-all outline-none"
+            value={searchTerm}
+            onChange={(e) => setSearchTerm(e.target.value)}
+          />
+        </div>
+
+        {/* Cars List */}
+        <div className="space-y-4">
+          {filteredCars.map((car) => (
+            <div key={car.id} className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden transition-all hover:shadow-md">
+              <div className="p-4 flex items-center justify-between bg-white border-b border-slate-50">
+                <div className="flex items-center gap-3">
+                  <div className={`p-2 rounded-lg ${car.status === 'Full' ? 'bg-rose-100 text-rose-600' : 'bg-emerald-100 text-emerald-600'}`}>
+                    <Car size={24} />
+                  </div>
+                  <div>
+                    <h3 className="font-bold text-slate-800">{car.name}</h3>
+                    <div className="flex items-center gap-2 mt-0.5">
+                      <span className={`text-[10px] px-2 py-0.5 rounded-full font-bold uppercase tracking-tight ${
+                        car.status === 'Full' ? 'bg-rose-500 text-white' : 'bg-emerald-500 text-white'
+                      }`}>
+                        {car.status === 'Full' ? 'Penuh' : 'Tersedia'}
+                      </span>
+                      <span className="text-xs text-slate-500 flex items-center gap-1">
+                        <Users size={12} /> {car.passengers.length} Orang
+                      </span>
+                    </div>
+                  </div>
+                </div>
+                <button 
+                  onClick={() => toggleStatus(car.id)}
+                  className="p-2 text-slate-400 hover:text-emerald-600 hover:bg-emerald-50 rounded-full transition-colors"
+                  title="Ubah Status Ketersediaan"
+                >
+                  {car.status === 'Full' ? <CheckCircle2 className="text-rose-500" /> : <AlertCircle />}
+                </button>
+              </div>
+
+              <div className="p-4 bg-slate-50/50">
+                <div className="flex flex-wrap gap-2 mb-4">
+                  {car.passengers.map((passenger, idx) => (
+                    <div 
+                      key={idx} 
+                      className="group flex items-center gap-2 bg-white px-3 py-1.5 rounded-lg border border-slate-200 text-sm shadow-sm"
+                    >
+                      <span className="text-slate-700">{passenger}</span>
+                      <button 
+                        onClick={() => removePassenger(car.id, idx)}
+                        className="text-slate-300 hover:text-rose-500 transition-colors opacity-0 group-hover:opacity-100"
+                      >
+                        <X size={14} />
+                      </button>
+                    </div>
+                  ))}
+                  
+                  {isAddingPassenger !== car.id && (
+                    <button 
+                      onClick={() => setIsAddingPassenger(car.id)}
+                      className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-dashed border-emerald-300 text-emerald-600 text-sm hover:bg-emerald-50 transition-colors"
+                    >
+                      <Plus size={14} /> Tambah Penumpang
+                    </button>
+                  )}
+                </div>
+
+                {isAddingPassenger === car.id && (
+                  <div className="flex gap-2 animate-in slide-in-from-top-2 duration-200">
+                    <input 
+                      autoFocus
+                      type="text" 
+                      placeholder="Masukkan nama..."
+                      className="flex-1 px-3 py-2 rounded-lg border border-emerald-300 focus:ring-1 focus:ring-emerald-500 outline-none text-sm"
+                      value={newPassengerName}
+                      onChange={(e) => setNewPassengerName(e.target.value)}
+                      onKeyPress={(e) => e.key === 'Enter' && addPassenger(car.id)}
+                    />
+                    <button 
+                      onClick={() => addPassenger(car.id)}
+                      className="bg-emerald-600 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-emerald-700"
+                    >
+                      Simpan
+                    </button>
+                    <button 
+                      onClick={() => {setIsAddingPassenger(null); setNewPassengerName("");}}
+                      className="bg-slate-200 text-slate-600 px-4 py-2 rounded-lg text-sm font-medium hover:bg-slate-300"
+                    >
+                      Batal
+                    </button>
+                  </div>
+                )}
+              </div>
+            </div>
+          ))}
+
+          {filteredCars.length === 0 && (
+            <div className="text-center py-20 bg-white rounded-3xl border border-dashed border-slate-300">
+              <Search className="mx-auto text-slate-300 mb-4" size={48} />
+              <p className="text-slate-500 font-medium">Tidak ada hasil ditemukan untuk "{searchTerm}"</p>
+            </div>
+          )}
+        </div>
+      </main>
+
+      {/* Mobile Footer Info */}
+      <footer className="fixed bottom-0 left-0 right-0 bg-white border-t border-slate-200 p-4 text-center text-xs text-slate-400 md:hidden">
+        Tabligh Akbar Nasional - Update Terakhir: {new Date().toLocaleDateString('id-ID')}
+      </footer>
+    </div>
+  );
+}
