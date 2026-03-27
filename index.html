@@ -16,7 +16,7 @@
         import { getAuth, signInAnonymously, onAuthStateChanged, signInWithCustomToken } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
         import { getFirestore, collection, doc, setDoc, updateDoc, deleteDoc, onSnapshot, query, getDocs, writeBatch } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
 
-        // Global export for Babel script
+        // Mengekspor fungsi ke window agar bisa diakses oleh skrip Babel
         window.FirebaseSDK = { initializeApp, getAuth, signInAnonymously, onAuthStateChanged, signInWithCustomToken, getFirestore, collection, doc, setDoc, updateDoc, deleteDoc, onSnapshot, query, getDocs, writeBatch };
     </script>
 
@@ -48,6 +48,16 @@
             { id: "11", name: "Mobil Avanza (Rahman Emba)", status: "Full", passengers: ["Rahman Emba", "Syahruni", "Haris Dg Lau", "Tati", "Rustam Dg Kalu", "Haeruddin Dg Nai", "Ramli Dg Nojeng"] },
         ];
 
+        // Inisialisasi Firebase di luar komponen (Sesuai Aturan Wajib)
+        let db, auth;
+        const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-tabligh-akbar';
+        let firebaseConfig = null;
+        try {
+            firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : null;
+        } catch (e) {
+            console.error("Gagal membaca konfigurasi Firebase");
+        }
+
         // Icons
         const CarIcon = () => (
             <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M19 17h2c.6 0 1-.4 1-1v-3c0-.9-.7-1.7-1.5-1.9C18.7 10.6 16 10 16 10s-1.3-1.4-2.2-2.3c-.5-.4-1.1-.7-1.8-.7H5c-.6 0-1.1.4-1.4.9l-1.4 2.9A3.7 3.7 0 0 0 2 12v4c0 .6.4 1 1 1h2"/><circle cx="7" cy="17" r="2"/><path d="M9 17h6"/><circle cx="17" cy="17" r="2"/></svg>
@@ -61,77 +71,57 @@
             const [user, setUser] = useState(null);
             const [cars, setCars] = useState([]);
             const [isLoading, setIsLoading] = useState(true);
-            const [error, setError] = useState(null);
+            const [isCloudActive, setIsCloudActive] = useState(false);
             const [searchTerm, setSearchTerm] = useState("");
             const [isAddingPassenger, setIsAddingPassenger] = useState(null);
             const [newPassengerName, setNewPassengerName] = useState("");
             const [isAddingCar, setIsAddingCar] = useState(false);
             const [newCarName, setNewCarName] = useState("");
 
-            // Memastikan data konfigurasi ada sebelum digunakan
-            const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-tabligh-akbar';
-            
-            const getFirebaseConfig = () => {
-                try {
-                    return typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : null;
-                } catch (e) {
-                    console.error("Invalid Firebase Config", e);
-                    return null;
-                }
-            };
-
-            // 1. Initialize Firebase & Auth
+            // 1. Initial Auth (Wajib Aturan 3)
             useEffect(() => {
-                const config = getFirebaseConfig();
-                if (!config) {
-                    setError("Konfigurasi Cloud tidak ditemukan. Aplikasi berjalan dalam mode pratinjau.");
-                    setCars(INITIAL_CARS);
-                    setIsLoading(false);
-                    return;
-                }
-
-                const checkSDK = setInterval(() => {
-                    if (window.FirebaseSDK) {
-                        clearInterval(checkSDK);
-                        initFirebase(config);
+                const initAuth = async () => {
+                    if (!firebaseConfig || !window.FirebaseSDK) {
+                        setCars(INITIAL_CARS);
+                        setIsLoading(false);
+                        return;
                     }
-                }, 100);
 
-                return () => clearInterval(checkSDK);
-            }, []);
+                    const { initializeApp, getAuth, signInAnonymously, onAuthStateChanged, signInWithCustomToken, getFirestore } = window.FirebaseSDK;
+                    const app = initializeApp(firebaseConfig);
+                    auth = getAuth(app);
+                    db = getFirestore(app);
 
-            const initFirebase = async (config) => {
-                try {
-                    const { initializeApp, getAuth, signInAnonymously, onAuthStateChanged, signInWithCustomToken } = window.FirebaseSDK;
-                    const app = initializeApp(config);
-                    const auth = getAuth(app);
-                    
                     if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
                         await signInWithCustomToken(auth, __initial_auth_token);
                     } else {
                         await signInAnonymously(auth);
                     }
-
-                    onAuthStateChanged(auth, (currUser) => {
+                    
+                    const unsubscribe = onAuthStateChanged(auth, (currUser) => {
                         setUser(currUser);
+                        setIsCloudActive(!!currUser);
                     });
-                } catch (err) {
-                    setError("Gagal terhubung ke server. Silakan muat ulang halaman.");
-                    setIsLoading(false);
-                }
-            };
+                    return () => unsubscribe();
+                };
 
-            // 2. Data Synchronization
+                // Tunggu sebentar untuk memastikan SDK dimuat di lingkungan lambat
+                const timer = setTimeout(initAuth, 500);
+                return () => clearTimeout(timer);
+            }, []);
+
+            // 2. Data Synchronization (Wajib Aturan 1 & 2)
             useEffect(() => {
-                if (!user || !window.FirebaseSDK) return;
-                const { getFirestore, collection, onSnapshot, doc, writeBatch } = window.FirebaseSDK;
-                const db = getFirestore();
+                if (!user || !db) return;
+
+                const { collection, onSnapshot, doc, writeBatch } = window.FirebaseSDK;
                 const carsCol = collection(db, 'artifacts', appId, 'public', 'data', 'cars');
 
                 const unsubscribe = onSnapshot(carsCol, (snapshot) => {
                     const carData = snapshot.docs.map(d => ({ ...d.data(), id: d.id }));
                     
                     if (carData.length === 0 && isLoading) {
+                        // Inisialisasi data cloud pertama kali jika kosong
                         const batch = writeBatch(db);
                         INITIAL_CARS.forEach(car => {
                             const carRef = doc(carsCol, car.id);
@@ -139,13 +129,11 @@
                         });
                         batch.commit();
                     } else {
-                        // Sort by name or ID to keep order consistent
                         setCars(carData.sort((a, b) => parseInt(a.id) - parseInt(b.id)));
                         setIsLoading(false);
                     }
                 }, (err) => {
-                    console.error("Firestore error:", err);
-                    setError("Terjadi kesalahan saat mengambil data.");
+                    console.error("Firestore Error:", err);
                 });
 
                 return () => unsubscribe();
@@ -162,19 +150,17 @@
                 car.passengers?.some(p => p.toLowerCase().includes(searchTerm.toLowerCase()))
             );
 
-            // Actions
+            // Actions (Menggunakan Guard if(!user))
             const toggleStatus = async (id, currentStatus) => {
-                if (!user) return;
-                const { getFirestore, doc, updateDoc } = window.FirebaseSDK;
-                const db = getFirestore();
+                if (!user || !db) return;
+                const { doc, updateDoc } = window.FirebaseSDK;
                 const carRef = doc(db, 'artifacts', appId, 'public', 'data', 'cars', id);
                 await updateDoc(carRef, { status: currentStatus === "Full" ? "Available" : "Full" });
             };
 
             const addPassenger = async (carId) => {
-                if (!newPassengerName.trim() || !user) return;
-                const { getFirestore, doc, updateDoc } = window.FirebaseSDK;
-                const db = getFirestore();
+                if (!newPassengerName.trim() || !user || !db) return;
+                const { doc, updateDoc } = window.FirebaseSDK;
                 const car = cars.find(c => c.id === carId);
                 const carRef = doc(db, 'artifacts', appId, 'public', 'data', 'cars', carId);
                 await updateDoc(carRef, { 
@@ -185,10 +171,9 @@
             };
 
             const removePassenger = async (carId, index) => {
-                if (!user) return;
+                if (!user || !db) return;
                 if (window.confirm("Hapus nama ini dari daftar?")) {
-                    const { getFirestore, doc, updateDoc } = window.FirebaseSDK;
-                    const db = getFirestore();
+                    const { doc, updateDoc } = window.FirebaseSDK;
                     const car = cars.find(c => c.id === carId);
                     const newPassengers = car.passengers.filter((_, i) => i !== index);
                     const carRef = doc(db, 'artifacts', appId, 'public', 'data', 'cars', carId);
@@ -197,9 +182,8 @@
             };
 
             const addNewCar = async () => {
-                if (!newCarName.trim() || !user) return;
-                const { getFirestore, doc, setDoc } = window.FirebaseSDK;
-                const db = getFirestore();
+                if (!newCarName.trim() || !user || !db) return;
+                const { doc, setDoc } = window.FirebaseSDK;
                 const newId = Date.now().toString();
                 const carRef = doc(db, 'artifacts', appId, 'public', 'data', 'cars', newId);
                 await setDoc(carRef, {
@@ -213,10 +197,9 @@
             };
 
             const removeCar = async (id) => {
-                if (!user) return;
+                if (!user || !db) return;
                 if (window.confirm("Hapus mobil ini untuk semua orang?")) {
-                    const { getFirestore, doc, deleteDoc } = window.FirebaseSDK;
-                    const db = getFirestore();
+                    const { doc, deleteDoc } = window.FirebaseSDK;
                     const carRef = doc(db, 'artifacts', appId, 'public', 'data', 'cars', id);
                     await deleteDoc(carRef);
                 }
@@ -229,7 +212,7 @@
                             <div className="w-12 h-12 border-4 border-white/20 border-t-white rounded-full animate-spin mx-auto mb-6"></div>
                             <h2 className="text-xl font-bold mb-2 tracking-wide uppercase">Sinkronisasi Data</h2>
                             <p className="text-emerald-100 text-sm opacity-80 leading-relaxed">
-                                Mohon tunggu sebentar, kami sedang menghubungkan aplikasi ke penyimpanan pusat...
+                                Mohon tunggu sebentar, kami sedang menghubungkan aplikasi ke penyimpanan cloud...
                             </p>
                         </div>
                     </div>
@@ -238,10 +221,10 @@
 
             return (
                 <div className="min-h-screen pb-20">
-                    {/* Error Banner */}
-                    {error && (
-                        <div className="bg-amber-500 text-white text-xs font-bold text-center py-2 px-4 shadow-inner">
-                            ⚠️ {error}
+                    {/* Pesan Mode jika Cloud tidak tersedia */}
+                    {!firebaseConfig && (
+                        <div className="bg-amber-500 text-white text-[10px] md:text-xs font-bold text-center py-2 px-4 shadow-inner sticky top-0 z-50">
+                            ⚠️ Mode Pratinjau Lokal: Perubahan hanya tersimpan di perangkat ini karena konfigurasi server eksternal (Vercel) belum disetup.
                         </div>
                     )}
 
@@ -252,15 +235,15 @@
                                     <h1 className="text-2xl md:text-3xl font-bold mb-1">Tabligh Akbar Nasional</h1>
                                     <div className="flex items-center gap-2">
                                         <p className="opacity-90 text-sm md:text-base">Bulukumba • 16 Syawal 1447 H</p>
-                                        <span className={`flex items-center gap-1.5 text-[10px] px-2 py-0.5 rounded-full border transition-all ${user ? 'bg-emerald-600/50 border-emerald-400 text-white' : 'bg-rose-600/50 border-rose-400 text-white'}`}>
-                                            <span className={`w-1.5 h-1.5 rounded-full ${user ? 'bg-emerald-400 dot-pulse' : 'bg-rose-400'}`}></span>
-                                            {user ? 'Cloud Aktif' : 'Offline'}
+                                        <span className={`flex items-center gap-1.5 text-[10px] px-2 py-0.5 rounded-full border transition-all ${isCloudActive ? 'bg-emerald-600/50 border-emerald-400 text-white' : 'bg-rose-600/50 border-rose-400 text-white'}`}>
+                                            <span className={`w-1.5 h-1.5 rounded-full ${isCloudActive ? 'bg-emerald-400 dot-pulse' : 'bg-rose-400'}`}></span>
+                                            {isCloudActive ? 'Cloud Aktif' : 'Offline'}
                                         </span>
                                     </div>
                                 </div>
                                 <div className="text-right hidden sm:block">
                                     <p className="font-semibold text-sm">5 April 2026 M</p>
-                                    <p className="text-[10px] opacity-60 mt-1 uppercase tracking-tighter">Sync ID: {user?.uid?.substring(0, 6) || 'None'}</p>
+                                    <p className="text-[10px] opacity-60 mt-1 uppercase tracking-tighter">ID: {user?.uid?.substring(0, 6) || 'None'}</p>
                                 </div>
                             </div>
 
@@ -279,7 +262,6 @@
                                 </div>
                             </div>
                         </div>
-                        {/* Background Decor */}
                         <div className="absolute top-0 right-0 -translate-y-1/2 translate-x-1/2 w-64 h-64 bg-white/5 rounded-full blur-3xl"></div>
                     </header>
 
@@ -333,7 +315,6 @@
                                         Publikasikan
                                     </button>
                                 </div>
-                                <p className="mt-3 text-[10px] text-slate-400 italic font-medium px-1">Mobil yang Anda tambahkan akan langsung terlihat oleh semua panitia di cloud.</p>
                             </div>
                         )}
 
@@ -423,10 +404,6 @@
                             ))}
                         </div>
                     </main>
-
-                    <div className="mt-12 mb-8 text-center">
-                        <p className="text-[10px] text-slate-400 uppercase tracking-[0.3em] font-bold">Bulukumba • Tabligh Akbar 1447 H</p>
-                    </div>
                 </div>
             );
         }
