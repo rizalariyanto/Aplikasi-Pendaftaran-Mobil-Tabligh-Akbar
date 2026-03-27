@@ -16,6 +16,7 @@
         import { getAuth, signInAnonymously, onAuthStateChanged, signInWithCustomToken } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
         import { getFirestore, collection, doc, setDoc, updateDoc, deleteDoc, onSnapshot, query, getDocs, writeBatch } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
 
+        // Global export for Babel script
         window.FirebaseSDK = { initializeApp, getAuth, signInAnonymously, onAuthStateChanged, signInWithCustomToken, getFirestore, collection, doc, setDoc, updateDoc, deleteDoc, onSnapshot, query, getDocs, writeBatch };
     </script>
 
@@ -60,47 +61,76 @@
             const [user, setUser] = useState(null);
             const [cars, setCars] = useState([]);
             const [isLoading, setIsLoading] = useState(true);
+            const [error, setError] = useState(null);
             const [searchTerm, setSearchTerm] = useState("");
             const [isAddingPassenger, setIsAddingPassenger] = useState(null);
             const [newPassengerName, setNewPassengerName] = useState("");
             const [isAddingCar, setIsAddingCar] = useState(false);
             const [newCarName, setNewCarName] = useState("");
 
+            // Memastikan data konfigurasi ada sebelum digunakan
             const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-tabligh-akbar';
-            const firebaseConfig = JSON.parse(__firebase_config);
+            
+            const getFirebaseConfig = () => {
+                try {
+                    return typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : null;
+                } catch (e) {
+                    console.error("Invalid Firebase Config", e);
+                    return null;
+                }
+            };
 
             // 1. Initialize Firebase & Auth
             useEffect(() => {
-                const { initializeApp, getAuth, signInAnonymously, onAuthStateChanged, signInWithCustomToken, getFirestore } = window.FirebaseSDK;
-                const app = initializeApp(firebaseConfig);
-                const auth = getAuth(app);
-                
-                const initAuth = async () => {
+                const config = getFirebaseConfig();
+                if (!config) {
+                    setError("Konfigurasi Cloud tidak ditemukan. Aplikasi berjalan dalam mode pratinjau.");
+                    setCars(INITIAL_CARS);
+                    setIsLoading(false);
+                    return;
+                }
+
+                const checkSDK = setInterval(() => {
+                    if (window.FirebaseSDK) {
+                        clearInterval(checkSDK);
+                        initFirebase(config);
+                    }
+                }, 100);
+
+                return () => clearInterval(checkSDK);
+            }, []);
+
+            const initFirebase = async (config) => {
+                try {
+                    const { initializeApp, getAuth, signInAnonymously, onAuthStateChanged, signInWithCustomToken } = window.FirebaseSDK;
+                    const app = initializeApp(config);
+                    const auth = getAuth(app);
+                    
                     if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
                         await signInWithCustomToken(auth, __initial_auth_token);
                     } else {
                         await signInAnonymously(auth);
                     }
-                };
-                initAuth();
 
-                const unsubscribe = onAuthStateChanged(auth, (currUser) => {
-                    setUser(currUser);
-                });
-                return () => unsubscribe();
-            }, []);
+                    onAuthStateChanged(auth, (currUser) => {
+                        setUser(currUser);
+                    });
+                } catch (err) {
+                    setError("Gagal terhubung ke server. Silakan muat ulang halaman.");
+                    setIsLoading(false);
+                }
+            };
 
             // 2. Data Synchronization
             useEffect(() => {
-                if (!user) return;
-                const { getFirestore, collection, onSnapshot, getDocs, writeBatch, doc, setDoc } = window.FirebaseSDK;
+                if (!user || !window.FirebaseSDK) return;
+                const { getFirestore, collection, onSnapshot, doc, writeBatch } = window.FirebaseSDK;
                 const db = getFirestore();
                 const carsCol = collection(db, 'artifacts', appId, 'public', 'data', 'cars');
 
                 const unsubscribe = onSnapshot(carsCol, (snapshot) => {
                     const carData = snapshot.docs.map(d => ({ ...d.data(), id: d.id }));
                     
-                    // Seed initial data if database is empty
                     if (carData.length === 0 && isLoading) {
                         const batch = writeBatch(db);
                         INITIAL_CARS.forEach(car => {
@@ -109,12 +139,13 @@
                         });
                         batch.commit();
                     } else {
-                        setCars(carData);
+                        // Sort by name or ID to keep order consistent
+                        setCars(carData.sort((a, b) => parseInt(a.id) - parseInt(b.id)));
                         setIsLoading(false);
                     }
-                }, (error) => {
-                    console.error("Firestore Error:", error);
-                    setIsLoading(false);
+                }, (err) => {
+                    console.error("Firestore error:", err);
+                    setError("Terjadi kesalahan saat mengambil data.");
                 });
 
                 return () => unsubscribe();
@@ -127,12 +158,13 @@
             }, [cars]);
 
             const filteredCars = cars.filter(car => 
-                car.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+                car.name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
                 car.passengers?.some(p => p.toLowerCase().includes(searchTerm.toLowerCase()))
             );
 
             // Actions
             const toggleStatus = async (id, currentStatus) => {
+                if (!user) return;
                 const { getFirestore, doc, updateDoc } = window.FirebaseSDK;
                 const db = getFirestore();
                 const carRef = doc(db, 'artifacts', appId, 'public', 'data', 'cars', id);
@@ -140,7 +172,7 @@
             };
 
             const addPassenger = async (carId) => {
-                if (!newPassengerName.trim()) return;
+                if (!newPassengerName.trim() || !user) return;
                 const { getFirestore, doc, updateDoc } = window.FirebaseSDK;
                 const db = getFirestore();
                 const car = cars.find(c => c.id === carId);
@@ -153,6 +185,7 @@
             };
 
             const removePassenger = async (carId, index) => {
+                if (!user) return;
                 if (window.confirm("Hapus nama ini dari daftar?")) {
                     const { getFirestore, doc, updateDoc } = window.FirebaseSDK;
                     const db = getFirestore();
@@ -164,8 +197,8 @@
             };
 
             const addNewCar = async () => {
-                if (!newCarName.trim()) return;
-                const { getFirestore, collection, doc, setDoc } = window.FirebaseSDK;
+                if (!newCarName.trim() || !user) return;
+                const { getFirestore, doc, setDoc } = window.FirebaseSDK;
                 const db = getFirestore();
                 const newId = Date.now().toString();
                 const carRef = doc(db, 'artifacts', appId, 'public', 'data', 'cars', newId);
@@ -180,7 +213,8 @@
             };
 
             const removeCar = async (id) => {
-                if (window.confirm("Hapus mobil ini dari sistem untuk semua orang?")) {
+                if (!user) return;
+                if (window.confirm("Hapus mobil ini untuk semua orang?")) {
                     const { getFirestore, doc, deleteDoc } = window.FirebaseSDK;
                     const db = getFirestore();
                     const carRef = doc(db, 'artifacts', appId, 'public', 'data', 'cars', id);
@@ -190,10 +224,13 @@
 
             if (isLoading) {
                 return (
-                    <div className="min-h-screen flex items-center justify-center bg-emerald-700 text-white">
-                        <div className="text-center">
-                            <div className="w-12 h-12 border-4 border-white/20 border-t-white rounded-full animate-spin mx-auto mb-4"></div>
-                            <p className="font-bold tracking-widest uppercase text-sm">Menghubungkan ke Cloud...</p>
+                    <div className="min-h-screen flex items-center justify-center bg-emerald-700 text-white p-6">
+                        <div className="text-center max-w-sm">
+                            <div className="w-12 h-12 border-4 border-white/20 border-t-white rounded-full animate-spin mx-auto mb-6"></div>
+                            <h2 className="text-xl font-bold mb-2 tracking-wide uppercase">Sinkronisasi Data</h2>
+                            <p className="text-emerald-100 text-sm opacity-80 leading-relaxed">
+                                Mohon tunggu sebentar, kami sedang menghubungkan aplikasi ke penyimpanan pusat...
+                            </p>
                         </div>
                     </div>
                 );
@@ -201,39 +238,49 @@
 
             return (
                 <div className="min-h-screen pb-20">
-                    <header className="bg-emerald-700 text-white pt-8 pb-16 px-4 shadow-lg">
-                        <div className="max-w-4xl mx-auto">
+                    {/* Error Banner */}
+                    {error && (
+                        <div className="bg-amber-500 text-white text-xs font-bold text-center py-2 px-4 shadow-inner">
+                            ⚠️ {error}
+                        </div>
+                    )}
+
+                    <header className="bg-emerald-700 text-white pt-8 pb-16 px-4 shadow-lg relative overflow-hidden">
+                        <div className="max-w-4xl mx-auto relative z-10">
                             <div className="flex justify-between items-start mb-6">
                                 <div>
                                     <h1 className="text-2xl md:text-3xl font-bold mb-1">Tabligh Akbar Nasional</h1>
-                                    <p className="opacity-90 flex items-center gap-2 text-sm md:text-base">
-                                        Bulukumba • 16 Syawal 1447 H
-                                        <span className="flex items-center gap-1 ml-2 text-[10px] bg-white/20 px-2 py-0.5 rounded-full">
-                                            <span className="w-2 h-2 bg-emerald-400 rounded-full dot-pulse"></span> Online
+                                    <div className="flex items-center gap-2">
+                                        <p className="opacity-90 text-sm md:text-base">Bulukumba • 16 Syawal 1447 H</p>
+                                        <span className={`flex items-center gap-1.5 text-[10px] px-2 py-0.5 rounded-full border transition-all ${user ? 'bg-emerald-600/50 border-emerald-400 text-white' : 'bg-rose-600/50 border-rose-400 text-white'}`}>
+                                            <span className={`w-1.5 h-1.5 rounded-full ${user ? 'bg-emerald-400 dot-pulse' : 'bg-rose-400'}`}></span>
+                                            {user ? 'Cloud Aktif' : 'Offline'}
                                         </span>
-                                    </p>
+                                    </div>
                                 </div>
-                                <div className="text-right">
+                                <div className="text-right hidden sm:block">
                                     <p className="font-semibold text-sm">5 April 2026 M</p>
-                                    <p className="text-[10px] opacity-60 mt-1">ID: {user?.uid?.substring(0, 8)}...</p>
+                                    <p className="text-[10px] opacity-60 mt-1 uppercase tracking-tighter">Sync ID: {user?.uid?.substring(0, 6) || 'None'}</p>
                                 </div>
                             </div>
 
                             <div className="grid grid-cols-3 gap-3">
-                                <div className="bg-white/10 backdrop-blur-md rounded-xl p-3 border border-white/20">
-                                    <p className="text-[10px] uppercase opacity-80 font-bold tracking-wider">Mobil</p>
-                                    <p className="text-xl font-bold">{stats.totalCars}</p>
+                                <div className="bg-white/10 backdrop-blur-md rounded-2xl p-4 border border-white/20 shadow-xl">
+                                    <p className="text-[10px] uppercase opacity-70 font-bold tracking-widest mb-1">Mobil</p>
+                                    <p className="text-2xl font-bold leading-none">{stats.totalCars}</p>
                                 </div>
-                                <div className="bg-white/10 backdrop-blur-md rounded-xl p-3 border border-white/20">
-                                    <p className="text-[10px] uppercase opacity-80 font-bold tracking-wider">Penumpang</p>
-                                    <p className="text-xl font-bold">{stats.totalPassengers}</p>
+                                <div className="bg-white/10 backdrop-blur-md rounded-2xl p-4 border border-white/20 shadow-xl">
+                                    <p className="text-[10px] uppercase opacity-70 font-bold tracking-widest mb-1">Daftar</p>
+                                    <p className="text-2xl font-bold leading-none">{stats.totalPassengers}</p>
                                 </div>
-                                <div className="bg-white/10 backdrop-blur-md rounded-xl p-3 border border-white/20">
-                                    <p className="text-[10px] uppercase opacity-80 font-bold tracking-wider">Penuh</p>
-                                    <p className="text-xl font-bold">{stats.fullCars}</p>
+                                <div className="bg-white/10 backdrop-blur-md rounded-2xl p-4 border border-white/20 shadow-xl">
+                                    <p className="text-[10px] uppercase opacity-70 font-bold tracking-widest mb-1">Penuh</p>
+                                    <p className="text-2xl font-bold leading-none">{stats.fullCars}</p>
                                 </div>
                             </div>
                         </div>
+                        {/* Background Decor */}
+                        <div className="absolute top-0 right-0 -translate-y-1/2 translate-x-1/2 w-64 h-64 bg-white/5 rounded-full blur-3xl"></div>
                     </header>
 
                     <main className="max-w-4xl mx-auto px-4 -mt-8 relative z-20">
@@ -241,13 +288,13 @@
                             <div className="flex-1 relative group">
                                 <input 
                                     type="text" 
-                                    placeholder="Cari nama mobil atau orang..."
-                                    className="w-full px-6 py-4 rounded-2xl shadow-2xl outline-none focus:ring-4 focus:ring-emerald-500/20 border border-slate-100 bg-white transition-all text-slate-800 font-medium"
+                                    placeholder="Cari mobil atau nama jamaah..."
+                                    className="w-full px-6 py-4 rounded-2xl shadow-2xl outline-none focus:ring-4 focus:ring-emerald-500/20 border-2 border-transparent focus:border-emerald-500 transition-all text-slate-800 font-medium"
                                     value={searchTerm}
                                     onChange={(e) => setSearchTerm(e.target.value)}
                                 />
-                                <div className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-300">
-                                    <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>
+                                <div className="absolute right-5 top-1/2 -translate-y-1/2 text-slate-300">
+                                    <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>
                                 </div>
                             </div>
                             <button 
@@ -255,9 +302,9 @@
                                 className="bg-emerald-600 text-white px-8 py-4 rounded-2xl shadow-2xl font-bold hover:bg-emerald-700 active:scale-95 transition-all flex items-center justify-center gap-2 whitespace-nowrap"
                             >
                                 {isAddingCar ? (
-                                    <><span>×</span> Batal</>
+                                    <><span>×</span> Tutup</>
                                 ) : (
-                                    <><span>+</span> Tambah Mobil</>
+                                    <><span>+</span> Mobil Baru</>
                                 )}
                             </button>
                         </div>
@@ -265,57 +312,58 @@
                         {isAddingCar && (
                             <div className="bg-white p-6 rounded-3xl shadow-xl border border-emerald-100 mb-6 animate-in">
                                 <h2 className="font-bold text-slate-800 mb-4 flex items-center gap-2">
-                                    <span className="p-1.5 bg-emerald-100 text-emerald-600 rounded-lg">
+                                    <span className="p-2 bg-emerald-50 text-emerald-600 rounded-xl">
                                         <CarIcon />
                                     </span>
-                                    Daftarkan Mobil Baru (Online)
+                                    Daftarkan Kendaraan Tambahan
                                 </h2>
                                 <div className="flex flex-col sm:flex-row gap-3">
                                     <input 
                                         type="text" 
-                                        className="flex-1 px-4 py-3 rounded-xl border border-slate-200 outline-none focus:border-emerald-500"
-                                        placeholder="Nama Mobil Baru..."
+                                        className="flex-1 px-5 py-3 rounded-2xl border-2 border-slate-100 outline-none focus:border-emerald-500"
+                                        placeholder="Ketik tipe mobil atau nama rombongan..."
                                         value={newCarName}
                                         onChange={(e) => setNewCarName(e.target.value)}
                                         onKeyDown={(e) => e.key === 'Enter' && addNewCar()}
                                     />
                                     <button 
                                         onClick={addNewCar} 
-                                        className="bg-emerald-600 text-white px-8 py-3 rounded-xl font-bold hover:bg-emerald-700 transition-colors shadow-lg shadow-emerald-200"
+                                        className="bg-emerald-600 text-white px-8 py-3 rounded-2xl font-bold hover:bg-emerald-700 transition-colors shadow-lg shadow-emerald-200"
                                     >
                                         Publikasikan
                                     </button>
                                 </div>
+                                <p className="mt-3 text-[10px] text-slate-400 italic font-medium px-1">Mobil yang Anda tambahkan akan langsung terlihat oleh semua panitia di cloud.</p>
                             </div>
                         )}
 
-                        <div className="space-y-4">
+                        <div className="space-y-5">
                             {filteredCars.map((car) => (
-                                <div key={car.id} className="bg-white rounded-3xl shadow-sm border border-slate-200 overflow-hidden hover:border-emerald-200 transition-colors">
+                                <div key={car.id} className="bg-white rounded-[2rem] shadow-sm border border-slate-200 overflow-hidden hover:border-emerald-200 transition-all duration-300">
                                     <div className="p-5 flex items-center justify-between border-b border-slate-50 bg-white">
-                                        <div className="flex items-center gap-4">
-                                            <div className={`p-3 rounded-2xl ${car.status === 'Full' ? 'bg-rose-50 text-rose-600' : 'bg-emerald-50 text-emerald-600'}`}>
+                                        <div className="flex items-center gap-5">
+                                            <div className={`p-4 rounded-[1.2rem] ${car.status === 'Full' ? 'bg-rose-50 text-rose-600' : 'bg-emerald-50 text-emerald-600'}`}>
                                                 <CarIcon />
                                             </div>
                                             <div>
-                                                <h3 className="font-bold text-slate-800 text-lg leading-tight">{car.name}</h3>
-                                                <div className="flex items-center gap-3 mt-1.5">
+                                                <h3 className="font-bold text-slate-800 text-xl leading-none mb-2">{car.name}</h3>
+                                                <div className="flex items-center gap-3">
                                                     <button 
                                                         onClick={() => toggleStatus(car.id, car.status)}
-                                                        className={`text-[10px] px-2.5 py-1 rounded-full font-bold tracking-wider transition-all shadow-sm ${car.status === 'Full' ? 'bg-rose-500 text-white' : 'bg-emerald-500 text-white'}`}
+                                                        className={`text-[10px] px-3 py-1 rounded-full font-extrabold tracking-widest transition-all shadow-sm active:scale-90 ${car.status === 'Full' ? 'bg-rose-500 text-white' : 'bg-emerald-500 text-white'}`}
                                                     >
                                                         {car.status === 'Full' ? 'PENUH' : 'TERSEDIA'}
                                                     </button>
-                                                    <span className="text-xs text-slate-400 font-medium flex items-center gap-1">
-                                                        <UsersIcon size={14} /> {(car.passengers || []).length} Orang
+                                                    <span className="text-xs text-slate-400 font-bold flex items-center gap-1.5">
+                                                        <UsersIcon size={14} /> {(car.passengers || []).length} Jamaah
                                                     </span>
                                                 </div>
                                             </div>
                                         </div>
-                                        <div className="flex gap-2">
+                                        <div className="flex gap-2 pr-2">
                                             <button 
                                                 onClick={() => removeCar(car.id)} 
-                                                className="p-2.5 bg-slate-50 text-slate-300 hover:text-rose-500 rounded-xl transition-colors text-xl font-light"
+                                                className="p-3 bg-slate-50 text-slate-300 hover:text-rose-500 hover:bg-rose-50 rounded-2xl transition-all text-xl font-light"
                                                 title="Hapus Mobil"
                                             >
                                                 ×
@@ -323,15 +371,15 @@
                                         </div>
                                     </div>
 
-                                    <div className="p-5 bg-slate-50/40">
-                                        <div className="flex flex-wrap gap-2.5 mb-4">
+                                    <div className="p-6 bg-slate-50/40">
+                                        <div className="flex flex-wrap gap-3 mb-5">
                                             {(car.passengers || []).map((p, idx) => (
-                                                <div key={idx} className="flex items-center gap-2 bg-white px-3.5 py-2 rounded-xl border border-slate-200 text-sm shadow-sm group animate-in">
-                                                    <span className="text-slate-700 font-medium">{p}</span>
+                                                <div key={idx} className="flex items-center gap-2 bg-white px-4 py-2.5 rounded-2xl border border-slate-200 text-sm shadow-sm group animate-in">
+                                                    <span className="text-slate-700 font-semibold">{p}</span>
                                                     <button 
                                                         onClick={() => removePassenger(car.id, idx)} 
-                                                        className="text-slate-300 hover:text-rose-500 opacity-0 group-hover:opacity-100 transition-opacity"
-                                                        title="Hapus Nama"
+                                                        className="text-slate-300 hover:text-rose-500 opacity-0 group-hover:opacity-100 transition-all"
+                                                        title="Hapus Jamaah"
                                                     >
                                                         ×
                                                     </button>
@@ -339,18 +387,18 @@
                                             ))}
                                             <button 
                                                 onClick={() => setIsAddingPassenger(car.id)}
-                                                className="px-3.5 py-2 rounded-xl border-2 border-dashed border-slate-200 text-slate-400 text-sm font-semibold hover:border-emerald-300 hover:text-emerald-600 transition-all"
+                                                className="px-4 py-2.5 rounded-2xl border-2 border-dashed border-slate-200 text-slate-400 text-sm font-bold hover:border-emerald-300 hover:text-emerald-600 transition-all active:scale-95 bg-white"
                                             >
-                                                + Tambah Orang
+                                                + Tambah Nama
                                             </button>
                                         </div>
 
                                         {isAddingPassenger === car.id && (
-                                            <div className="flex gap-2 animate-in">
+                                            <div className="flex gap-2 animate-in bg-white p-3 rounded-2xl shadow-lg border border-emerald-50">
                                                 <input 
                                                     type="text" 
-                                                    className="flex-1 px-4 py-2.5 rounded-xl border border-emerald-300 text-sm outline-none focus:ring-2 focus:ring-emerald-500/20 shadow-inner bg-white"
-                                                    placeholder="Nama Penumpang..."
+                                                    className="flex-1 px-4 py-2.5 rounded-xl border border-emerald-100 text-sm outline-none focus:ring-2 focus:ring-emerald-500/20 bg-slate-50"
+                                                    placeholder="Nama jamaah..."
                                                     value={newPassengerName}
                                                     onChange={(e) => setNewPassengerName(e.target.value)}
                                                     onKeyDown={(e) => e.key === 'Enter' && addPassenger(car.id)}
@@ -360,11 +408,11 @@
                                                     onClick={() => addPassenger(car.id)} 
                                                     className="bg-emerald-600 text-white px-6 py-2 rounded-xl text-sm font-bold shadow-md shadow-emerald-200 active:scale-95 transition-all"
                                                 >
-                                                    OK
+                                                    Simpan
                                                 </button>
                                                 <button 
                                                     onClick={() => {setIsAddingPassenger(null); setNewPassengerName("");}} 
-                                                    className="bg-slate-200 text-slate-600 px-4 py-2 rounded-xl text-sm font-bold active:scale-95 transition-all"
+                                                    className="bg-slate-100 text-slate-500 px-4 py-2 rounded-xl text-sm font-bold active:scale-95 transition-all"
                                                 >
                                                     Batal
                                                 </button>
@@ -374,11 +422,11 @@
                                 </div>
                             ))}
                         </div>
-                        
-                        <div className="mt-12 text-center text-[10px] text-slate-400 uppercase tracking-[0.2em]">
-                            Seluruh data disinkronkan secara real-time via Cloud Storage
-                        </div>
                     </main>
+
+                    <div className="mt-12 mb-8 text-center">
+                        <p className="text-[10px] text-slate-400 uppercase tracking-[0.3em] font-bold">Bulukumba • Tabligh Akbar 1447 H</p>
+                    </div>
                 </div>
             );
         }
