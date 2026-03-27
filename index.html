@@ -3,16 +3,28 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Pendaftaran Mobil Tabligh Akbar</title>
+    <title>Pendaftaran Mobil Tabligh Akbar - Cloud Sync</title>
     <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
     <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
     <script src="https://cdn.tailwindcss.com"></script>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
+    
+    <!-- Firebase SDKs -->
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+        import { getAuth, signInAnonymously, onAuthStateChanged, signInWithCustomToken } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        import { getFirestore, collection, doc, setDoc, updateDoc, deleteDoc, onSnapshot, query, getDocs, writeBatch } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+
+        window.FirebaseSDK = { initializeApp, getAuth, signInAnonymously, onAuthStateChanged, signInWithCustomToken, getFirestore, collection, doc, setDoc, updateDoc, deleteDoc, onSnapshot, query, getDocs, writeBatch };
+    </script>
+
     <style>
         body { font-family: 'Inter', sans-serif; }
         .animate-in { animation: fadeIn 0.3s ease-out; }
         @keyframes fadeIn { from { opacity: 0; transform: translateY(-10px); } to { opacity: 1; transform: translateY(0); } }
+        .dot-pulse { animation: pulse 1.5s infinite; }
+        @keyframes pulse { 0% { opacity: 0.4; } 50% { opacity: 1; } 100% { opacity: 0.4; } }
     </style>
 </head>
 <body class="bg-slate-50">
@@ -21,7 +33,21 @@
     <script type="text/babel">
         const { useState, useMemo, useEffect } = React;
 
-        // Icons as SVG Components
+        const INITIAL_CARS = [
+            { id: "1", name: "Mobil Kijang Biru", status: "Available", passengers: ["Mas Amin", "Agus Dg Bunga", "Uztad Syamsuddin", "Abd Azis Dg Tunru", "Uztad Ali", "Uztad Sigollo", "Mukhtar Nyampa", "Uztad Dg Tola"] },
+            { id: "2", name: "Mobil Avanza Hitam", status: "Available", passengers: ["Rahman Dg Ngemba", "Haeruddin D' Nai", "Abd. Haris Dg Lau'", "Rustam D' Kalu'", "Ramli Dg Nojeng"] },
+            { id: "3", name: "Mobil Mega Carry (KKI Ibrahim Bin Adam)", status: "Full", passengers: ["Rombongan KKI IBRAHIM BIN ADAM"] },
+            { id: "4", name: "Mobil Spander", status: "Available", passengers: ["Ust Komari"] },
+            { id: "5", name: "Mobil Ust. Ulla", status: "Full", passengers: ["Rombongan Ust. Ulla"] },
+            { id: "6", name: "Mobil Jafar Emba", status: "Full", passengers: ["Rombongan Jafar Emba"] },
+            { id: "7", name: "Mobil Muhajirin Ardan", status: "Full", passengers: ["Rombongan Muhajirin Ardan"] },
+            { id: "8", name: "Mobil Wiz", status: "Full", passengers: ["Rombongan Wiz"] },
+            { id: "9", name: "Mobil Xenia Situru", status: "Available", passengers: ["Ust Situru", "Dg Ngasih", "Andi Tajuddin", "Harpina", "Arsyad Itung", "Dg Ngugi"] },
+            { id: "10", name: "Mobil Wuling Cortez (KKI Amru Bin Dinar 2)", status: "Full", passengers: ["Kaharuddin", "Ustd Sudarman", "Dahlan", "Armansyah", "Taslim", "Azka", "Durjansyah", "Herianto"] },
+            { id: "11", name: "Mobil Avanza (Rahman Emba)", status: "Full", passengers: ["Rahman Emba", "Syahruni", "Haris Dg Lau", "Tati", "Rustam Dg Kalu", "Haeruddin Dg Nai", "Ramli Dg Nojeng"] },
+        ];
+
+        // Icons
         const CarIcon = () => (
             <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M19 17h2c.6 0 1-.4 1-1v-3c0-.9-.7-1.7-1.5-1.9C18.7 10.6 16 10 16 10s-1.3-1.4-2.2-2.3c-.5-.4-1.1-.7-1.8-.7H5c-.6 0-1.1.4-1.4.9l-1.4 2.9A3.7 3.7 0 0 0 2 12v4c0 .6.4 1 1 1h2"/><circle cx="7" cy="17" r="2"/><path d="M9 17h6"/><circle cx="17" cy="17" r="2"/></svg>
         );
@@ -30,86 +56,166 @@
             <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
         );
 
-        const INITIAL_CARS = [
-            { id: 1, name: "Mobil Kijang Biru", status: "Available", passengers: ["Mas Amin", "Agus Dg Bunga", "Uztad Syamsuddin", "Abd Azis Dg Tunru", "Uztad Ali", "Uztad Sigollo", "Mukhtar Nyampa", "Uztad Dg Tola"] },
-            { id: 2, name: "Mobil Avanza Hitam", status: "Available", passengers: ["Rahman Dg Ngemba", "Haeruddin D' Nai", "Abd. Haris Dg Lau'", "Rustam D' Kalu'", "Ramli Dg Nojeng"] },
-            { id: 3, name: "Mobil Mega Carry (KKI Ibrahim Bin Adam)", status: "Full", passengers: ["Rombongan KKI IBRAHIM BIN ADAM"] },
-            { id: 4, name: "Mobil Spander", status: "Available", passengers: ["Ust Komari"] },
-            { id: 5, name: "Mobil Ust. Ulla", status: "Full", passengers: ["Rombongan Ust. Ulla"] },
-            { id: 6, name: "Mobil Jafar Emba", status: "Full", passengers: ["Rombongan Jafar Emba"] },
-            { id: 7, name: "Mobil Muhajirin Ardan", status: "Full", passengers: ["Rombongan Muhajirin Ardan"] },
-            { id: 8, name: "Mobil Wiz", status: "Full", passengers: ["Rombongan Wiz"] },
-            { id: 9, name: "Mobil Xenia Situru", status: "Available", passengers: ["Ust Situru", "Dg Ngasih", "Andi Tajuddin", "Harpina", "Arsyad Itung", "Dg Ngugi"] },
-            { id: 10, name: "Mobil Wuling Cortez (KKI Amru Bin Dinar 2)", status: "Full", passengers: ["Kaharuddin", "Ustd Sudarman", "Dahlan", "Armansyah", "Taslim", "Azka", "Durjansyah", "Herianto"] },
-            { id: 11, name: "Mobil Avanza (Rahman Emba)", status: "Full", passengers: ["Rahman Emba", "Syahruni", "Haris Dg Lau", "Tati", "Rustam Dg Kalu", "Haeruddin Dg Nai", "Ramli Dg Nojeng"] },
-        ];
-
         function App() {
-            const [cars, setCars] = useState(INITIAL_CARS);
+            const [user, setUser] = useState(null);
+            const [cars, setCars] = useState([]);
+            const [isLoading, setIsLoading] = useState(true);
             const [searchTerm, setSearchTerm] = useState("");
             const [isAddingPassenger, setIsAddingPassenger] = useState(null);
             const [newPassengerName, setNewPassengerName] = useState("");
             const [isAddingCar, setIsAddingCar] = useState(false);
             const [newCarName, setNewCarName] = useState("");
 
+            const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-tabligh-akbar';
+            const firebaseConfig = JSON.parse(__firebase_config);
+
+            // 1. Initialize Firebase & Auth
+            useEffect(() => {
+                const { initializeApp, getAuth, signInAnonymously, onAuthStateChanged, signInWithCustomToken, getFirestore } = window.FirebaseSDK;
+                const app = initializeApp(firebaseConfig);
+                const auth = getAuth(app);
+                
+                const initAuth = async () => {
+                    if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
+                        await signInWithCustomToken(auth, __initial_auth_token);
+                    } else {
+                        await signInAnonymously(auth);
+                    }
+                };
+                initAuth();
+
+                const unsubscribe = onAuthStateChanged(auth, (currUser) => {
+                    setUser(currUser);
+                });
+                return () => unsubscribe();
+            }, []);
+
+            // 2. Data Synchronization
+            useEffect(() => {
+                if (!user) return;
+                const { getFirestore, collection, onSnapshot, getDocs, writeBatch, doc, setDoc } = window.FirebaseSDK;
+                const db = getFirestore();
+                const carsCol = collection(db, 'artifacts', appId, 'public', 'data', 'cars');
+
+                const unsubscribe = onSnapshot(carsCol, (snapshot) => {
+                    const carData = snapshot.docs.map(d => ({ ...d.data(), id: d.id }));
+                    
+                    // Seed initial data if database is empty
+                    if (carData.length === 0 && isLoading) {
+                        const batch = writeBatch(db);
+                        INITIAL_CARS.forEach(car => {
+                            const carRef = doc(carsCol, car.id);
+                            batch.set(carRef, car);
+                        });
+                        batch.commit();
+                    } else {
+                        setCars(carData);
+                        setIsLoading(false);
+                    }
+                }, (error) => {
+                    console.error("Firestore Error:", error);
+                    setIsLoading(false);
+                });
+
+                return () => unsubscribe();
+            }, [user]);
+
             const stats = useMemo(() => {
-                const totalPassengers = cars.reduce((acc, car) => acc + car.passengers.length, 0);
+                const totalPassengers = cars.reduce((acc, car) => acc + (car.passengers?.length || 0), 0);
                 const fullCars = cars.filter(car => car.status === "Full").length;
                 return { totalPassengers, fullCars, totalCars: cars.length };
             }, [cars]);
 
             const filteredCars = cars.filter(car => 
                 car.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                car.passengers.some(p => p.toLowerCase().includes(searchTerm.toLowerCase()))
+                car.passengers?.some(p => p.toLowerCase().includes(searchTerm.toLowerCase()))
             );
 
-            const toggleStatus = (id) => {
-                setCars(prev => prev.map(car => 
-                    car.id === id ? { ...car, status: car.status === "Full" ? "Available" : "Full" } : car
-                ));
+            // Actions
+            const toggleStatus = async (id, currentStatus) => {
+                const { getFirestore, doc, updateDoc } = window.FirebaseSDK;
+                const db = getFirestore();
+                const carRef = doc(db, 'artifacts', appId, 'public', 'data', 'cars', id);
+                await updateDoc(carRef, { status: currentStatus === "Full" ? "Available" : "Full" });
             };
 
-            const addPassenger = (carId) => {
+            const addPassenger = async (carId) => {
                 if (!newPassengerName.trim()) return;
-                setCars(prev => prev.map(car => 
-                    car.id === carId ? { ...car, passengers: [...car.passengers, newPassengerName.trim()] } : car
-                ));
+                const { getFirestore, doc, updateDoc } = window.FirebaseSDK;
+                const db = getFirestore();
+                const car = cars.find(c => c.id === carId);
+                const carRef = doc(db, 'artifacts', appId, 'public', 'data', 'cars', carId);
+                await updateDoc(carRef, { 
+                    passengers: [...(car.passengers || []), newPassengerName.trim()] 
+                });
                 setNewPassengerName("");
                 setIsAddingPassenger(null);
             };
 
-            const removePassenger = (carId, index) => {
-                setCars(prev => prev.map(car => 
-                    car.id === carId ? { ...car, passengers: car.passengers.filter((_, i) => i !== index) } : car
-                ));
+            const removePassenger = async (carId, index) => {
+                if (window.confirm("Hapus nama ini dari daftar?")) {
+                    const { getFirestore, doc, updateDoc } = window.FirebaseSDK;
+                    const db = getFirestore();
+                    const car = cars.find(c => c.id === carId);
+                    const newPassengers = car.passengers.filter((_, i) => i !== index);
+                    const carRef = doc(db, 'artifacts', appId, 'public', 'data', 'cars', carId);
+                    await updateDoc(carRef, { passengers: newPassengers });
+                }
             };
 
-            const addNewCar = () => {
+            const addNewCar = async () => {
                 if (!newCarName.trim()) return;
-                const newCar = { id: Date.now(), name: newCarName.trim(), status: "Available", passengers: [] };
-                setCars(prev => [newCar, ...prev]);
+                const { getFirestore, collection, doc, setDoc } = window.FirebaseSDK;
+                const db = getFirestore();
+                const newId = Date.now().toString();
+                const carRef = doc(db, 'artifacts', appId, 'public', 'data', 'cars', newId);
+                await setDoc(carRef, {
+                    id: newId,
+                    name: newCarName.trim(),
+                    status: "Available",
+                    passengers: []
+                });
                 setNewCarName("");
                 setIsAddingCar(false);
             };
 
-            const removeCar = (id) => {
-                if (window.confirm("Hapus mobil ini dari daftar?")) {
-                    setCars(prev => prev.filter(car => car.id !== id));
+            const removeCar = async (id) => {
+                if (window.confirm("Hapus mobil ini dari sistem untuk semua orang?")) {
+                    const { getFirestore, doc, deleteDoc } = window.FirebaseSDK;
+                    const db = getFirestore();
+                    const carRef = doc(db, 'artifacts', appId, 'public', 'data', 'cars', id);
+                    await deleteDoc(carRef);
                 }
             };
 
+            if (isLoading) {
+                return (
+                    <div className="min-h-screen flex items-center justify-center bg-emerald-700 text-white">
+                        <div className="text-center">
+                            <div className="w-12 h-12 border-4 border-white/20 border-t-white rounded-full animate-spin mx-auto mb-4"></div>
+                            <p className="font-bold tracking-widest uppercase text-sm">Menghubungkan ke Cloud...</p>
+                        </div>
+                    </div>
+                );
+            }
+
             return (
                 <div className="min-h-screen pb-20">
-                    {/* Header: Dibuat tidak sticky untuk menghindari overlap clipping pada search bar */}
                     <header className="bg-emerald-700 text-white pt-8 pb-16 px-4 shadow-lg">
                         <div className="max-w-4xl mx-auto">
                             <div className="flex justify-between items-start mb-6">
                                 <div>
                                     <h1 className="text-2xl md:text-3xl font-bold mb-1">Tabligh Akbar Nasional</h1>
-                                    <p className="opacity-90 flex items-center gap-2 text-sm md:text-base">Bulukumba • 16 Syawal 1447 H</p>
+                                    <p className="opacity-90 flex items-center gap-2 text-sm md:text-base">
+                                        Bulukumba • 16 Syawal 1447 H
+                                        <span className="flex items-center gap-1 ml-2 text-[10px] bg-white/20 px-2 py-0.5 rounded-full">
+                                            <span className="w-2 h-2 bg-emerald-400 rounded-full dot-pulse"></span> Online
+                                        </span>
+                                    </p>
                                 </div>
                                 <div className="text-right">
                                     <p className="font-semibold text-sm">5 April 2026 M</p>
+                                    <p className="text-[10px] opacity-60 mt-1">ID: {user?.uid?.substring(0, 8)}...</p>
                                 </div>
                             </div>
 
@@ -131,7 +237,6 @@
                     </header>
 
                     <main className="max-w-4xl mx-auto px-4 -mt-8 relative z-20">
-                        {/* Container Search & Tambah Mobil dengan bayangan lebih kuat agar terlihat mengapung */}
                         <div className="flex flex-col md:flex-row gap-4 mb-6">
                             <div className="flex-1 relative group">
                                 <input 
@@ -163,13 +268,13 @@
                                     <span className="p-1.5 bg-emerald-100 text-emerald-600 rounded-lg">
                                         <CarIcon />
                                     </span>
-                                    Daftarkan Mobil Baru
+                                    Daftarkan Mobil Baru (Online)
                                 </h2>
                                 <div className="flex flex-col sm:flex-row gap-3">
                                     <input 
                                         type="text" 
                                         className="flex-1 px-4 py-3 rounded-xl border border-slate-200 outline-none focus:border-emerald-500"
-                                        placeholder="Nama Mobil (Contoh: Mobil Avanza Biru)..."
+                                        placeholder="Nama Mobil Baru..."
                                         value={newCarName}
                                         onChange={(e) => setNewCarName(e.target.value)}
                                         onKeyDown={(e) => e.key === 'Enter' && addNewCar()}
@@ -178,7 +283,7 @@
                                         onClick={addNewCar} 
                                         className="bg-emerald-600 text-white px-8 py-3 rounded-xl font-bold hover:bg-emerald-700 transition-colors shadow-lg shadow-emerald-200"
                                     >
-                                        Simpan Mobil
+                                        Publikasikan
                                     </button>
                                 </div>
                             </div>
@@ -195,26 +300,23 @@
                                             <div>
                                                 <h3 className="font-bold text-slate-800 text-lg leading-tight">{car.name}</h3>
                                                 <div className="flex items-center gap-3 mt-1.5">
-                                                    <span className={`text-[10px] px-2.5 py-1 rounded-full font-bold tracking-wider ${car.status === 'Full' ? 'bg-rose-500 text-white' : 'bg-emerald-500 text-white'}`}>
+                                                    <button 
+                                                        onClick={() => toggleStatus(car.id, car.status)}
+                                                        className={`text-[10px] px-2.5 py-1 rounded-full font-bold tracking-wider transition-all shadow-sm ${car.status === 'Full' ? 'bg-rose-500 text-white' : 'bg-emerald-500 text-white'}`}
+                                                    >
                                                         {car.status === 'Full' ? 'PENUH' : 'TERSEDIA'}
-                                                    </span>
+                                                    </button>
                                                     <span className="text-xs text-slate-400 font-medium flex items-center gap-1">
-                                                        <UsersIcon size={14} /> {car.passengers.length} Orang
+                                                        <UsersIcon size={14} /> {(car.passengers || []).length} Orang
                                                     </span>
                                                 </div>
                                             </div>
                                         </div>
                                         <div className="flex gap-2">
                                             <button 
-                                                onClick={() => toggleStatus(car.id)} 
-                                                className="p-2.5 bg-slate-50 rounded-xl hover:bg-slate-100 transition-colors"
-                                                title="Ubah Status"
-                                            >
-                                                {car.status === 'Full' ? '🔴' : '🟢'}
-                                            </button>
-                                            <button 
                                                 onClick={() => removeCar(car.id)} 
                                                 className="p-2.5 bg-slate-50 text-slate-300 hover:text-rose-500 rounded-xl transition-colors text-xl font-light"
+                                                title="Hapus Mobil"
                                             >
                                                 ×
                                             </button>
@@ -223,12 +325,13 @@
 
                                     <div className="p-5 bg-slate-50/40">
                                         <div className="flex flex-wrap gap-2.5 mb-4">
-                                            {car.passengers.map((p, idx) => (
-                                                <div key={idx} className="flex items-center gap-2 bg-white px-3.5 py-2 rounded-xl border border-slate-200 text-sm shadow-sm group">
+                                            {(car.passengers || []).map((p, idx) => (
+                                                <div key={idx} className="flex items-center gap-2 bg-white px-3.5 py-2 rounded-xl border border-slate-200 text-sm shadow-sm group animate-in">
                                                     <span className="text-slate-700 font-medium">{p}</span>
                                                     <button 
                                                         onClick={() => removePassenger(car.id, idx)} 
                                                         className="text-slate-300 hover:text-rose-500 opacity-0 group-hover:opacity-100 transition-opacity"
+                                                        title="Hapus Nama"
                                                     >
                                                         ×
                                                     </button>
@@ -247,7 +350,7 @@
                                                 <input 
                                                     type="text" 
                                                     className="flex-1 px-4 py-2.5 rounded-xl border border-emerald-300 text-sm outline-none focus:ring-2 focus:ring-emerald-500/20 shadow-inner bg-white"
-                                                    placeholder="Ketik nama di sini..."
+                                                    placeholder="Nama Penumpang..."
                                                     value={newPassengerName}
                                                     onChange={(e) => setNewPassengerName(e.target.value)}
                                                     onKeyDown={(e) => e.key === 'Enter' && addPassenger(car.id)}
@@ -270,15 +373,10 @@
                                     </div>
                                 </div>
                             ))}
-                            
-                            {filteredCars.length === 0 && (
-                                <div className="text-center py-20 bg-white rounded-3xl border border-dashed border-slate-200">
-                                    <div className="text-slate-300 mb-2">
-                                        <svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1" strokeLinecap="round" strokeLinejoin="round" className="mx-auto"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>
-                                    </div>
-                                    <p className="text-slate-400 font-medium">Tidak menemukan data untuk "{searchTerm}"</p>
-                                </div>
-                            )}
+                        </div>
+                        
+                        <div className="mt-12 text-center text-[10px] text-slate-400 uppercase tracking-[0.2em]">
+                            Seluruh data disinkronkan secara real-time via Cloud Storage
                         </div>
                     </main>
                 </div>
